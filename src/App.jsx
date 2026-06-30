@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Plus, Trash2, TrendingUp, TrendingDown, Minus, Activity, AlertTriangle } from "lucide-react";
+import { Plus, Trash2, TrendingUp, TrendingDown, Minus, Activity, AlertTriangle, Image as ImageIcon, X } from "lucide-react";
 
 const OUTCOMES = [
   { key: "be", label: "โดนหน้าทุน", short: "BE", color: "#64748b", rr: 0 },
@@ -22,6 +22,38 @@ function loadTrades() {
   } catch (e) {
     return [];
   }
+}
+
+// Resize + compress an image file down to a small base64 JPEG so it doesn't blow up localStorage
+function compressImage(file, maxDim = 900, quality = 0.7) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("read failed"));
+    reader.onload = () => {
+      const img = new window.Image();
+      img.onerror = () => reject(new Error("image load failed"));
+      img.onload = () => {
+        let { width, height } = img;
+        if (width > maxDim || height > maxDim) {
+          if (width > height) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+          } else {
+            width = Math.round((width * maxDim) / height);
+            height = maxDim;
+          }
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL("image/jpeg", quality));
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
 }
 
 function StatCard({ label, value, color, icon }) {
@@ -67,9 +99,13 @@ export default function App() {
   const [openOutcome, setOpenOutcome] = useState(null);
   const [customRR, setCustomRR] = useState("");
   const [note, setNote] = useState("");
+  const [imageData, setImageData] = useState(null);
+  const [imageBusy, setImageBusy] = useState(false);
+  const [lightbox, setLightbox] = useState(null);
   const [saveError, setSaveError] = useState(false);
   const [justAdded, setJustAdded] = useState(null);
   const errorTimeout = useRef(null);
+  const fileInputRef = useRef(null);
 
   function persist(next) {
     setTrades(next);
@@ -95,6 +131,7 @@ export default function App() {
       outcome: outcomeKey,
       rr,
       note: note.trim(),
+      image: imageData || null,
       ts: new Date().toISOString(),
     };
     const next = [trade, ...trades].slice(0, MAX_TRADES + 200);
@@ -102,8 +139,25 @@ export default function App() {
     setOpenOutcome(null);
     setCustomRR("");
     setNote("");
+    setImageData(null);
     setJustAdded(trade.id);
     setTimeout(() => setJustAdded(null), 650);
+  }
+
+  async function handleImageSelect(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImageBusy(true);
+    try {
+      const dataUrl = await compressImage(file);
+      setImageData(dataUrl);
+    } catch (err) {
+      setSaveError(true);
+      if (errorTimeout.current) clearTimeout(errorTimeout.current);
+      errorTimeout.current = setTimeout(() => setSaveError(false), 4000);
+    }
+    setImageBusy(false);
+    e.target.value = "";
   }
 
   function removeTrade(id) {
@@ -275,7 +329,11 @@ export default function App() {
                 <button
                   key={o.key}
                   className="add-btn"
-                  onClick={() => setOpenOutcome(active ? null : o.key)}
+                  onClick={() => {
+                    const willOpen = openOutcome !== o.key;
+                    setOpenOutcome(willOpen ? o.key : null);
+                    setImageData(null);
+                  }}
                   style={{
                     border: `1.5px solid ${active ? o.color : "rgba(124,58,237,0.15)"}`,
                     background: active ? `${o.color}22` : "rgba(255,255,255,0.8)",
@@ -358,6 +416,70 @@ export default function App() {
                   }}
                 />
               </div>
+              <div style={{ marginBottom: 13 }}>
+                <label style={{ fontSize: 12, color: "#5b5780", display: "block", marginBottom: 7, fontWeight: 600 }}>รูปภาพ (ไม่บังคับ)</label>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleImageSelect}
+                  style={{ display: "none" }}
+                />
+                {!imageData ? (
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={imageBusy}
+                    style={{
+                      width: "100%",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: 7,
+                      background: "#ffffff",
+                      border: "1.5px dashed rgba(124,58,237,0.3)",
+                      borderRadius: 9,
+                      padding: "12px 0",
+                      color: "#7c3aed",
+                      fontSize: 13,
+                      fontWeight: 600,
+                      cursor: imageBusy ? "default" : "pointer",
+                    }}
+                  >
+                    <ImageIcon size={15} />
+                    {imageBusy ? "กำลังประมวลผลรูป..." : "แนบรูปกราฟ / สกรีนช็อต"}
+                  </button>
+                ) : (
+                  <div style={{ position: "relative", display: "inline-block" }}>
+                    <img
+                      src={imageData}
+                      alt="preview"
+                      style={{ maxWidth: "100%", maxHeight: 180, borderRadius: 9, border: "1.5px solid rgba(124,58,237,0.2)", display: "block" }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setImageData(null)}
+                      style={{
+                        position: "absolute",
+                        top: 6,
+                        right: 6,
+                        background: "rgba(30,27,58,0.75)",
+                        border: "none",
+                        borderRadius: 99,
+                        width: 24,
+                        height: 24,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        color: "#fff",
+                        cursor: "pointer",
+                      }}
+                    >
+                      <X size={13} />
+                    </button>
+                  </div>
+                )}
+              </div>
               <button
                 className="save-btn"
                 onClick={() => addTrade(openOutcome)}
@@ -430,6 +552,14 @@ export default function App() {
                   <div style={{ flex: 1, fontSize: 13, color: t.note ? "#3d3870" : "#c4c0e0", fontWeight: 500 }}>
                     {t.note || "—"}
                   </div>
+                  {t.image && (
+                    <img
+                      src={t.image}
+                      alt="trade"
+                      onClick={() => setLightbox(t.image)}
+                      style={{ width: 34, height: 34, objectFit: "cover", borderRadius: 7, cursor: "pointer", border: "1.5px solid rgba(124,58,237,0.2)", flexShrink: 0 }}
+                    />
+                  )}
                   <div style={{ fontSize: 13.5, fontWeight: 800, fontFamily: "'JetBrains Mono', ui-monospace, monospace", color: t.rr > 0 ? "#06c281" : t.rr < 0 ? "#fb5673" : "#64748b" }}>
                     {t.rr > 0 ? "+" : ""}{t.rr}R
                   </div>
@@ -467,6 +597,51 @@ export default function App() {
           </button>
         )}
       </div>
+
+      {lightbox && (
+        <div
+          onClick={() => setLightbox(null)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(20,17,40,0.75)",
+            backdropFilter: "blur(4px)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 50,
+            padding: 24,
+            animation: "popIn 0.15s ease",
+          }}
+        >
+          <img
+            src={lightbox}
+            alt="trade full"
+            onClick={(e) => e.stopPropagation()}
+            style={{ maxWidth: "100%", maxHeight: "85vh", borderRadius: 14, boxShadow: "0 20px 60px rgba(0,0,0,0.4)" }}
+          />
+          <button
+            onClick={() => setLightbox(null)}
+            style={{
+              position: "fixed",
+              top: 22,
+              right: 22,
+              background: "rgba(255,255,255,0.15)",
+              border: "1px solid rgba(255,255,255,0.3)",
+              borderRadius: 99,
+              width: 38,
+              height: 38,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              color: "#fff",
+              cursor: "pointer",
+            }}
+          >
+            <X size={18} />
+          </button>
+        </div>
+      )}
     </div>
   );
 }
