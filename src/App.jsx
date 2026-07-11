@@ -368,7 +368,8 @@ export default function App() {
 
   function addTrade(key) {
     const o = OUTCOMES.find(x => x.key === key);
-    const rrVal = o.needRR ? (parseFloat(rr) || 0) : 0;
+    let rrVal = o.needRR ? (parseFloat(rr) || 0) : 0;
+    if (key === "sl") rrVal = -Math.abs(rrVal); // SL ต้องเป็นลบเสมอ
     const t = { id: uid(), outcome: key, rr: rrVal, note: note.trim(), image: img || null, ts: new Date().toISOString() };
     persist([t, ...trades].slice(0, 200));
     setOpenForm(null); setRR(""); setNote(""); setImg(null);
@@ -545,10 +546,11 @@ export default function App() {
               {OUTCOMES.find(x => x.key === openForm)?.needRR && (
                 <div style={{ marginBottom: 11 }}>
                   <div style={{ fontSize: 9, color: C.dim, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", fontFamily: "ui-monospace,monospace", marginBottom: 5 }}>
-                    RR ที่ได้ {openForm === "sl" ? "(ใส่เป็นลบ เช่น -1)" : "(เช่น 3.5)"}
+                    openForm === "sl" ? "RR ที่เสีย (ใส่ตัวเลข ระบบทำให้ติดลบให้)" : "RR ที่ได้ (เช่น 3.5)"
                   </div>
                   <input type="number" step="0.1" value={rr} onChange={e => setRR(e.target.value)}
-                    placeholder={openForm === "sl" ? "-1" : "3.5"}
+                    placeholder={openForm === "sl" ? "1" : "3.5"}
+                    min={openForm === "sl" ? "0" : undefined}
                     style={{ width: "100%", background: "rgba(255,255,255,0.06)", border: `1px solid ${C.border}`, borderRadius: 10, padding: "10px 12px", color: C.text, fontSize: 14, fontFamily: "ui-monospace,monospace", boxSizing: "border-box", outline: "none" }} />
                 </div>
               )}
